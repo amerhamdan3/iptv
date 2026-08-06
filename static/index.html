@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPTV</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">IPTV</div>
+  <input id="search" type="search" placeholder="Search channels, movies, shows…" autocomplete="off" spellcheck="false">
+  <nav id="tabs">
+    <button data-tab="home" class="active">Home</button>
+    <button data-tab="live">Live</button>
+    <button data-tab="vod">Movies</button>
+    <button data-tab="series">Series</button>
+    <button data-tab="favorites">★ Favorites</button>
+    <button data-tab="downloads">⬇ Offline</button>
+  </nav>
+</header>
+
+<div id="playerbar" class="hidden">
+  <span class="dot"></span>
+  <span id="playing-title"></span>
+  <span id="playing-pos" class="muted"></span>
+  <button id="btn-stop" class="small">Stop</button>
+</div>
+
+<main>
+  <aside id="sidebar" class="hidden"><div id="cats"></div></aside>
+  <section id="content"><div class="empty">Loading…</div></section>
+</main>
+
+<footer>
+  <span id="sync-status">…</span>
+  <span class="spacer"></span>
+  <span id="disk"></span>
+  <button id="btn-sync" class="small">Refresh catalog</button>
+</footer>
+
+<div id="modal" class="hidden">
+  <div class="modal-box">
+    <button id="modal-close">✕</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
