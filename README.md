@@ -68,7 +68,7 @@ Play launches mpv, and the app follows its progress over mpv's JSON IPC socket.
 Requires **Python 3.11+**. On Windows, mpv is installed for you.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/iptv.git
+git clone https://github.com/amerhamdan3/iptv.git
 cd iptv
 python setup.py
 ```
