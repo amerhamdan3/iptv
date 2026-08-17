@@ -5,6 +5,8 @@
 cache/
 downloads/
 bin/
+mpv-shot*.jpg
+mpv-shot*.png
 __pycache__/
 *.pyc
 .venv/
