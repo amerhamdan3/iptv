@@ -23,6 +23,10 @@ SYNC_INTERVAL_HOURS = int(os.getenv("SYNC_INTERVAL_HOURS", "24"))
 # account temporarily blocked.
 MOVIE_DETAILS_LOOKUP = os.getenv("MOVIE_DETAILS_LOOKUP", "0") == "1"
 
+# The shared watchlog (watched / ratings / suggestions). Both blank = off.
+WATCHLOG_URL = os.getenv("WATCHLOG_URL", "").rstrip("/")
+WATCHLOG_KEY = os.getenv("WATCHLOG_KEY", "")
+
 DB_PATH = ROOT / "iptv.db"
 CACHE_DIR = ROOT / "cache" / "img"
 DOWNLOAD_DIR = ROOT / os.getenv("DOWNLOAD_DIR", "downloads")

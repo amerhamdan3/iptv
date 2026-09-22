@@ -216,6 +216,12 @@ def _persist(session: dict) -> None:
 
 def _finalize(session: dict) -> None:
     _persist(session)
+    # Log to the shared watchlog only when this playback reached the end.
+    dur = session["duration"] or 0
+    if (session["kind"] in ("vod", "episode") and dur > 0
+            and session["position"] / dur >= COMPLETE_AT):
+        import watchlog  # late: watchlog pulls in imdb/sync
+        watchlog.mark_watched_async(session["kind"], session["item_id"])
     with _lock:
         if globals().get("_current") is session:
             globals()["_current"] = None

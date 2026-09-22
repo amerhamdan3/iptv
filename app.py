@@ -21,6 +21,7 @@ import downloader
 import imdb
 import player
 import sync
+import watchlog
 from xtream import Xtream
 
 if sys.platform == "win32":
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
     downloader.start_supervisor()
     # Refresh in the background; the UI is already usable from cache.
     asyncio.create_task(sync.background_refresh())
+    watchlog.ensure_fresh()
     yield
     player.stop()
 
@@ -59,6 +61,7 @@ def api_status():
             "disk_bytes": downloader.disk_usage(),
         },
         "mpv": bool(config.find_mpv()),
+        "watchlog": watchlog.status(),
     }
 
 
@@ -148,7 +151,7 @@ def api_browse(kind: str, category: str = "", offset: int = 0,
         order = "t.last_modified DESC"
     sql += f" ORDER BY {order or 'favorite DESC, t.name'} LIMIT ? OFFSET ?"
     params += [limit, offset]
-    return db.query(sql, params)
+    return watchlog.annotate(db.query(sql, params))
 
 
 @app.get("/api/facets")
@@ -217,7 +220,7 @@ def api_search(q: str, kind: str = "", limit: int = 80):
         fav = db.one("SELECT 1 FROM favorites WHERE kind=? AND item_id=?",
                      (r["kind"], r["id"]))
         r["favorite"] = bool(fav)
-    return rows
+    return watchlog.annotate(rows)
 
 
 @app.get("/api/series/{series_id}")
@@ -235,7 +238,8 @@ async def api_series(series_id: int, refresh: bool = False):
     info["favorite"] = bool(fav)
     return {"series": info, "episodes": eps,
             "progress": _series_progress(series_id),
-            "imdb": imdb.cached("series", series_id)}
+            "imdb": imdb.cached("series", series_id),
+            "mine": await asyncio.to_thread(_mine, "series", series_id)}
 
 
 @app.get("/api/vod/{stream_id}")
@@ -286,6 +290,7 @@ async def api_vod(stream_id: int):
         "history": hist,
         "download": dl["status"] if dl else None,
         "imdb": imdb.cached("vod", stream_id),
+        "mine": await asyncio.to_thread(_mine, "vod", stream_id),
     }
 
 
@@ -383,6 +388,44 @@ def api_continue(limit: int = 20):
     return out[:limit]
 
 
+# ---------------------------------------------------------------- my list
+
+def _mine(kind: str, item_id: int) -> dict | None:
+    if not watchlog.enabled():
+        return None
+    watchlog.ensure_fresh(block=True)
+    return watchlog.summary(watchlog.entry_for(kind, item_id)) or {}
+
+
+class MineIn(BaseModel):
+    kind: str                  # vod | series
+    item_id: int
+    changes: dict              # rating, liked, status, watched_at, note
+
+
+@app.post("/api/mine")
+def api_mine(body: MineIn):
+    """Rate / like / mark a title in the shared watchlog."""
+    if not watchlog.enabled():
+        raise HTTPException(400, "Watchlog isn't set up (WATCHLOG_URL and WATCHLOG_KEY in .env)")
+    if body.kind not in ("vod", "series"):
+        raise HTTPException(400, "bad kind")
+    bad = set(body.changes) - watchlog.FIELDS
+    if bad:
+        raise HTTPException(400, f"can't change: {', '.join(sorted(bad))}")
+    try:
+        return watchlog.update(body.kind, body.item_id, body.changes)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(502, f"Watchlog refused it: {e.response.text[:200]}")
+
+
+@app.get("/api/mylist")
+def api_mylist():
+    return watchlog.my_list()
+
+
 # ---------------------------------------------------------------- favorites
 
 class FavIn(BaseModel):
@@ -415,7 +458,7 @@ def api_favorites():
                        f"WHERE stream_id=?", (f["item_id"],))
         if r:
             out.append({**r, "kind": f["kind"], "favorite": True})
-    return out
+    return watchlog.annotate(out)
 
 
 # ---------------------------------------------------------------- playback
@@ -520,6 +563,8 @@ def api_mark(body: MarkIn):
         "position_sec=CASE WHEN excluded.completed=1 THEN 0 "
         "  ELSE history.position_sec END, watched_at=excluded.watched_at",
         (body.kind, body.item_id, series_id, int(body.completed), db.now()))
+    if body.completed:
+        watchlog.mark_watched_async(body.kind, body.item_id)
     return {"ok": True}
 
 

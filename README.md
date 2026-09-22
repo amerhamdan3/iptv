@@ -53,6 +53,17 @@ description, genre, cast and your progress. One click on **Fetch from IMDb**
 adds the IMDb rating, vote count, Metascore, runtime, certificate and full
 credits, cached so it's there next time. Wrong match? Paste the IMDb link.
 
+**One list, everywhere.** Rate anything 1–10, give it 👍 or 👎, mark it
+watched or save it to a watchlist, right from its info panel. Finishing a
+movie or episode logs it as watched automatically. It all goes to your
+[watchlog](https://github.com/amerhamdan3/watchlog), a small free service on
+Cloudflare, so every machine running this app, and the phone page, see the
+same list: posters show ✓ and your score wherever you open the app. The
+**📋 My List** tab has your suggestions (with why they were suggested), your
+watchlist and everything you've watched. Changes made while the list is
+unreachable are queued and sent later. Set `WATCHLOG_URL` and `WATCHLOG_KEY`
+in `.env` to turn it on.
+
 **Works offline.** Download any movie or episode. Interrupted downloads resume
 at the exact byte they stopped at. Once downloaded, playback never touches the
 network.
@@ -251,6 +262,7 @@ app.py           API routes
 config.py        .env loading, stream URL builders
 xtream.py        Xtream player_api client
 imdb.py          on-demand IMDb rating and details lookup
+watchlog.py      sync ratings / watched / suggestions with the shared watchlog
 db.py            SQLite schema — catalog, favorites, history, downloads, FTS5
 sync.py          catalog sync + per-series episode caching
 player.py        mpv launching and position tracking over JSON IPC
@@ -273,6 +285,8 @@ The UI is a thin client over a plain JSON API, so it's easy to script:
 | `GET /api/series/{id}` | show details + episodes |
 | `GET /api/vod/{id}` | movie details + watch state |
 | `POST /api/imdb` | fetch and cache IMDb data for a movie or show |
+| `POST /api/mine` | rate, like or mark a title in the shared watchlog |
+| `GET /api/mylist` | suggestions, watchlist and watched, matched to the library |
 | `GET /api/continue` | continue-watching with next-episode resolution |
 | `POST /api/play` | launch playback |
 | `POST /api/download` | queue an offline download |

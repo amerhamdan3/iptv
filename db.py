@@ -87,6 +87,12 @@ CREATE TABLE IF NOT EXISTS imdb (
     PRIMARY KEY (kind, item_id)
 );
 
+-- Watchlog changes that couldn't be sent yet (service unreachable).
+CREATE TABLE IF NOT EXISTS watchlog_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT, item_id INTEGER, fields TEXT, created_at INTEGER
+);
+
 -- unicode61 with diacritic folding so Arabic and Latin titles both search
 -- sensibly regardless of how they were typed.
 CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(

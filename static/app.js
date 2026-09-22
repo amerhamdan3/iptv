@@ -110,6 +110,7 @@ function cardHTML(it) {
          onerror="this.style.visibility='hidden'">
     ${meta ? `<span class="badge">${meta}</span>` : ""}
     <button class="star ${it.favorite ? "on" : ""}" data-fav="1">★</button>
+    ${mineBadge(it.mine)}
     <div class="label" dir="auto">${esc(it.name)}</div>
   </div>`;
 }
@@ -148,6 +149,79 @@ function openItem(kind, id, name) {
   $("#m-play").onclick = () => { play(kind, id); $("#modal").classList.add("hidden"); };
   $("#m-restart").onclick = () => { play(kind, id, true); $("#modal").classList.add("hidden"); };
   if ($("#m-dl")) $("#m-dl").onclick = () => download(kind, id);
+}
+
+/* My list: the shared watchlog entry for a title (watched, rating, verdict).
+   `mine` is null when the watchlog isn't set up, {} when the title isn't on
+   the list yet. */
+function mineBadge(m) {
+  if (!m || !m.status) return "";
+  const txt = m.status === "watched"
+    ? `✓${m.rating ? " " + m.rating : ""}${m.liked === -1 ? " 👎" : ""}`
+    : m.status === "suggested" ? "💡" : "📌";
+  const tip = m.status === "watched"
+    ? `Watched${m.watched_at ? " " + m.watched_at : ""}${m.rating ? " · rated " + m.rating + "/10" : ""}`
+    : m.status === "suggested" ? "Suggested for you" : "On your watchlist";
+  return `<span class="mine-badge ${m.status}" title="${esc(tip)}">${txt}</span>`;
+}
+
+function mineHTML(m) {
+  if (m == null) return "";
+  const on = (c) => (c ? "on" : "");
+  return `
+    <div class="mine" id="mine">
+      <div class="mine-head">
+        <b>My list</b>
+        <span class="muted">${m.pending ? "⏳ will sync when the list is reachable"
+          : m.status === "watched" ? `✓ Watched${m.watched_at ? " · " + esc(m.watched_at) : ""}`
+          : m.status === "suggested" ? "💡 Suggested for you"
+          : m.status === "watchlist" ? "📌 On your watchlist" : "Not on your list yet"}</span>
+      </div>
+      ${m.status === "suggested" && m.reason ? `<div class="muted mine-reason" dir="auto">${esc(m.reason)}</div>` : ""}
+      <div class="mine-row">
+        <button class="small ghost ${on(m.status === "watched")}" data-mine-status="watched">✓ Watched</button>
+        <button class="small ghost ${on(m.status === "watchlist")}" data-mine-status="watchlist">📌 Watchlist</button>
+        <span class="mine-sep"></span>
+        <button class="small ghost up ${on(m.liked === 1)}" data-mine-liked="1" title="Liked it">👍</button>
+        <button class="small ghost down ${on(m.liked === -1)}" data-mine-liked="-1" title="Didn't like it">👎</button>
+      </div>
+      <div class="mine-stars">${[1,2,3,4,5,6,7,8,9,10].map((n) =>
+        `<button class="${m.rating && n <= m.rating ? "on" : ""}" data-mine-rate="${n}">${n}</button>`).join("")}</div>
+    </div>`;
+}
+
+function bindMine(kind, id, m) {
+  const box = $("#mine");
+  if (!box) return;
+  let cur = { ...(m || {}) };
+  const send = async (changes) => {
+    box.classList.add("busy");
+    try {
+      const r = await api("/api/mine", { method: "POST", body: { kind, item_id: id, changes } });
+      cur = { ...cur, ...r };
+      box.outerHTML = mineHTML(cur);
+      bindMine(kind, id, cur);
+      if (r.pending) toast("Saved here; it will sync to your list when it's reachable");
+    } catch (e) {
+      box.classList.remove("busy");
+      toast("My list: " + e.message, true);
+    }
+  };
+  box.querySelectorAll("[data-mine-status]").forEach((b) => b.onclick = () => {
+    const v = b.dataset.mineStatus;
+    if (cur.status !== v) send({ status: v });
+  });
+  box.querySelectorAll("[data-mine-liked]").forEach((b) => b.onclick = () => {
+    const v = +b.dataset.mineLiked;
+    send({ liked: cur.liked === v ? null : v });
+  });
+  box.querySelectorAll("[data-mine-rate]").forEach((b) => b.onclick = () => {
+    const v = +b.dataset.mineRate;
+    // Rating something means you've seen it; tap the same score to clear it.
+    const changes = { rating: cur.rating === v ? null : v };
+    if (changes.rating && cur.status !== "watched") changes.status = "watched";
+    send(changes);
+  });
 }
 
 /* IMDb panel: shared by movies and series. Cached data shows straight away;
@@ -246,6 +320,7 @@ async function openMovie(id) {
         </div>
       </div>
     </div>
+    ${mineHTML(m.mine)}
     ${imdbHTML(m.imdb)}`);
 
   const close = () => $("#modal").classList.add("hidden");
@@ -257,6 +332,7 @@ async function openMovie(id) {
     e.target.textContent = r.favorite ? "★ In favorites" : "☆ Add to favorites";
   };
   bindImdb("vod", id);
+  bindMine("vod", id, m.mine);
 }
 
 async function openSeries(id) {
@@ -338,6 +414,7 @@ async function openSeries(id) {
         </div>
       </div>
     </div>
+    ${mineHTML(data.mine)}
     ${imdbHTML(data.imdb)}
     ${banner}
     ${body || '<div class="empty">No episodes listed.</div>'}
@@ -348,6 +425,7 @@ async function openSeries(id) {
     e.target.textContent = r.favorite ? "★ In favorites" : "☆ Add to favorites";
   };
   bindImdb("series", id);
+  bindMine("series", id, data.mine);
   $("#modal-body").querySelectorAll("[data-play-ep]").forEach((b) =>
     b.onclick = () => { play("episode", +b.dataset.playEp); $("#modal").classList.add("hidden"); });
   $("#modal-body").querySelectorAll("[data-dl-ep]").forEach((b) =>
@@ -589,6 +667,49 @@ async function renderFavorites() {
   bindCards(content);
 }
 
+async function renderMyList() {
+  sidebar.classList.add("hidden");
+  content.innerHTML = `<div class="empty">Loading your list…</div>`;
+  const d = await api("/api/mylist");
+  if (!d.enabled) {
+    content.innerHTML = `<div class="empty">Your shared list isn't connected.<br><br>
+      Add <code>WATCHLOG_URL</code> and <code>WATCHLOG_KEY</code> to <code>.env</code> and restart.</div>`;
+    return;
+  }
+  const row = (it) => {
+    const m = it.match;
+    const sub = [it.year, it.type === "show" ? "Series" : "Movie",
+      it.status === "watched" && it.watched_at ? "watched " + it.watched_at : ""].filter(Boolean).join(" · ");
+    const art = it.poster || (m && img(m.icon)) || "";
+    return `
+      <div class="ml-item ${m ? "" : "missing"}" ${m ? `data-ml="${m.kind}:${m.id}"` : ""}
+           title="${m ? "Open in your library" : "Not in your IPTV library"}">
+        ${art ? `<img src="${esc(art)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<div class="ph"></div>`}
+        <div class="t">
+          <div class="name" dir="auto">${esc(it.title)}</div>
+          <div class="muted sub">${esc(sub)}${m ? "" : " · not in library"}</div>
+          ${it.reason && it.status !== "watched" ? `<div class="muted sub reason" dir="auto">${esc(it.reason)}</div>` : ""}
+          ${it.note ? `<div class="muted sub" dir="auto">“${esc(it.note)}”</div>` : ""}
+        </div>
+        <div class="score">${it.rating ? it.rating : ""}${it.liked === 1 ? " 👍" : it.liked === -1 ? " 👎" : ""}</div>
+      </div>`;
+  };
+  const section = (title, list, empty) => `
+    <h2>${title} <span class="muted">${list.length || ""}</span></h2>
+    ${list.length ? `<div class="ml-list">${list.map(row).join("")}</div>`
+      : `<div class="muted" style="margin:6px 0 22px">${empty}</div>`}`;
+  content.innerHTML = `
+    ${d.error ? `<div class="muted" style="margin-bottom:10px">⚠ Showing the last copy: ${esc(d.error)}</div>` : ""}
+    ${d.pending ? `<div class="muted" style="margin-bottom:10px">⏳ ${d.pending} change(s) waiting to sync</div>` : ""}
+    ${section("💡 Suggestions", d.suggested, "Nothing suggested yet — ask Claude for ideas and they land here.")}
+    ${section("📌 Watchlist", d.watchlist, "Tap 📌 Watchlist on any movie or show to save it for later.")}
+    ${section("✓ Watched", d.watched, "Finished titles show up here automatically, with your rating.")}`;
+  content.querySelectorAll("[data-ml]").forEach((el) => el.onclick = () => {
+    const [kind, id] = el.dataset.ml.split(":");
+    kind === "series" ? openSeries(+id) : openMovie(+id);
+  });
+}
+
 async function renderDownloads() {
   sidebar.classList.add("hidden");
   const d = await api("/api/downloads");
@@ -648,6 +769,7 @@ async function render() {
     if (state.query.length >= 2) return renderSearch();
     if (state.tab === "home") return renderHome();
     if (state.tab === "favorites") return renderFavorites();
+    if (state.tab === "mylist") return renderMyList();
     if (state.tab === "downloads") return renderDownloads();
     return renderGrid(state.tab);
   } catch (e) {

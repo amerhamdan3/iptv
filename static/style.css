@@ -175,6 +175,54 @@ h2 .muted { font-weight: 400; font-size: 13px; }
   border-radius: 6px; padding: 2px 6px; font-size: 11px;
 }
 
+/* My-list marker, bottom-left of the poster: ✓ 8 / 💡 / 📌 */
+.mine-badge {
+  position: absolute; left: 6px; bottom: 62px;
+  background: rgba(0,0,0,.8); color: var(--text);
+  border-radius: 6px; padding: 2px 7px; font-size: 12px; font-weight: 600;
+}
+.mine-badge.watched { color: #f5c518; }
+
+/* ---------------------------------------------------------- my list */
+
+.mine {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px; margin: 12px 0; font-size: 13px;
+}
+.mine.busy { opacity: .6; pointer-events: none; }
+.mine-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.mine-reason { margin: -2px 0 8px; }
+.mine-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mine-row .on { color: var(--text); border-color: var(--accent); background: rgba(63,185,80,.15); }
+.mine-row .down.on { border-color: #f85149; background: rgba(248,81,73,.15); }
+.mine-sep { width: 8px; }
+.mine-stars { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-top: 10px; }
+.mine-stars button {
+  background: var(--panel); border: 1px solid var(--line); color: var(--muted);
+  border-radius: 6px; padding: 6px 0; font-weight: 600; cursor: pointer;
+}
+.mine-stars button:hover { color: var(--text); }
+.mine-stars button.on { background: #f5c518; border-color: #f5c518; color: #000; }
+
+.ml-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; margin-bottom: 26px; }
+.ml-item {
+  display: flex; gap: 12px; align-items: center; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 8px;
+}
+.ml-item:hover { border-color: var(--accent-2); }
+.ml-item.missing { cursor: default; opacity: .6; }
+.ml-item.missing:hover { border-color: var(--line); }
+.ml-item img, .ml-item .ph {
+  width: 48px; height: 72px; object-fit: cover; border-radius: 6px;
+  background: var(--panel-2); flex: none;
+}
+.ml-item .t { flex: 1; min-width: 0; }
+.ml-item .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ml-item .sub { font-size: 12.5px; }
+.ml-item .reason { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ml-item .score { color: #f5c518; font-weight: 700; font-size: 16px; white-space: nowrap; }
+
 /* ---------------------------------------------------------- continue */
 
 .continue-row {
