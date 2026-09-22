@@ -296,9 +296,7 @@ async function renderHome() {
     html += `</div>`;
   }
 
-  if (favs.length) {
-    html += `<h2>★ Favorites</h2><div class="grid">${favs.map(cardHTML).join("")}</div>`;
-  }
+  html += favSectionsHTML(favs);
 
   if (!html) {
     html = `<div class="empty">Nothing watched yet.<br><br>
@@ -453,11 +451,23 @@ async function renderGrid(kind) {
   };
 }
 
+// Favorites split by kind, so channels, movies and shows never share a grid.
+const FAV_SECTIONS = [["live", "Live TV"], ["vod", "Movies"], ["series", "Series"]];
+
+function favSectionsHTML(favs) {
+  return FAV_SECTIONS.map(([kind, title]) => {
+    const items = favs.filter((f) => f.kind === kind);
+    return items.length
+      ? `<h2>★ ${title}</h2><div class="grid">${items.map(cardHTML).join("")}</div>`
+      : "";
+  }).join("");
+}
+
 async function renderFavorites() {
   sidebar.classList.add("hidden");
   const favs = await api("/api/favorites");
   content.innerHTML = favs.length
-    ? `<h2>★ Favorites</h2><div class="grid">${favs.map(cardHTML).join("")}</div>`
+    ? favSectionsHTML(favs)
     : `<div class="empty">No favorites yet — tap the ★ on any poster.</div>`;
   bindCards(content);
 }
