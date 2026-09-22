@@ -18,6 +18,11 @@ WEB_PORT = int(os.getenv("PORT", "8000"))
 MAX_CONCURRENT_DOWNLOADS = int(os.getenv("MAX_CONCURRENT_DOWNLOADS", "2"))
 SYNC_INTERVAL_HOURS = int(os.getenv("SYNC_INTERVAL_HOURS", "24"))
 
+# Per-movie get_vod_info lookups for genres. Off by default: one request per
+# movie is enough to trip some providers' flood protection and get the
+# account temporarily blocked.
+MOVIE_DETAILS_LOOKUP = os.getenv("MOVIE_DETAILS_LOOKUP", "0") == "1"
+
 DB_PATH = ROOT / "iptv.db"
 CACHE_DIR = ROOT / "cache" / "img"
 DOWNLOAD_DIR = ROOT / os.getenv("DOWNLOAD_DIR", "downloads")

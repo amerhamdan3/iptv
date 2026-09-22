@@ -264,7 +264,7 @@ async def sync_movie_details() -> None:
     get_vod_info call. Slow the first time (one call per movie), cheap after:
     only movies never fetched before are queued.
     """
-    if _details_lock.locked():
+    if not config.MOVIE_DETAILS_LOOKUP or _details_lock.locked():
         return
     async with _details_lock:
         todo = [r["stream_id"] for r in db.query(

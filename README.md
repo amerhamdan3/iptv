@@ -43,7 +43,10 @@ Tested against a ~24,000-item library: **sub-200ms**.
 **Filters the whole library.** Top-rated 2012 comedies across every series
 category is two dropdowns away: filter movies and shows by genre, release
 year or decade, and minimum rating, sorted by rating, release or date added.
-Movie genres come from a one-time background lookup after the first sync.
+Series genres come with the catalog. Providers don't list movie genres, so
+they need one request per movie; that's off by default because the burst can
+get an account temporarily blocked (`MOVIE_DETAILS_LOOKUP=1` in `.env` to
+opt in).
 
 **Shows what it is before you play it.** Clicking a movie or show opens its
 description, genre, cast and your progress. One click on **Fetch from IMDb**
