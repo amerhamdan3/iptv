@@ -250,6 +250,31 @@ button:disabled { opacity: .45; cursor: default; }
 .hero { display: flex; gap: 18px; margin-bottom: 8px; }
 .hero img { width: 150px; border-radius: 10px; background: var(--panel-2); }
 .plot { color: var(--muted); font-size: 13px; max-height: 96px; overflow-y: auto; }
+.hero img { align-self: flex-start; }
+.credit { font-size: 13px; margin-top: 6px; }
+
+.imdb {
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px; margin: 12px 0; font-size: 13px;
+}
+.imdb > button { margin: -2px 0; }
+.imdb-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.imdb-logo {
+  background: #f5c518; color: #000; font-weight: 800; font-size: 12px;
+  padding: 2px 6px; border-radius: 4px; letter-spacing: -0.3px;
+}
+.imdb-score { font-size: 18px; font-weight: 700; color: #f5c518; }
+.imdb-score small { font-size: 12px; color: var(--muted); font-weight: 400; }
+.imdb-meta {
+  background: #54a72a; color: #fff; font-weight: 700; font-size: 12px;
+  padding: 1px 5px; border-radius: 3px;
+}
+.imdb-title { margin-bottom: 6px; }
+.imdb .plot { max-height: none; margin-bottom: 8px; }
+.imdb-credits > div { margin-top: 3px; }
+.imdb-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.imdb-actions a { color: #f5c518; text-decoration: none; }
+.imdb-actions a:hover { text-decoration: underline; }
 
 /* ---------------------------------------------------------- downloads */
 

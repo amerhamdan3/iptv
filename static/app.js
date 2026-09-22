@@ -25,7 +25,12 @@ async function api(path, opts = {}) {
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
-  if (!r.ok) throw new Error((await r.text()) || r.statusText);
+  if (!r.ok) {
+    const text = await r.text();
+    let msg = text || r.statusText;
+    try { msg = JSON.parse(text).detail || msg; } catch {}
+    throw new Error(msg);
+  }
   return r.status === 204 ? null : r.json();
 }
 
@@ -115,6 +120,7 @@ function bindCards(root) {
     el.addEventListener("click", (ev) => {
       if (ev.target.dataset.fav) return toggleFav(kind, id, ev.target);
       if (kind === "series") openSeries(id);
+      else if (kind === "vod") openMovie(id);
       else openItem(kind, id, el.querySelector(".label").textContent);
     });
   });
@@ -142,6 +148,115 @@ function openItem(kind, id, name) {
   $("#m-play").onclick = () => { play(kind, id); $("#modal").classList.add("hidden"); };
   $("#m-restart").onclick = () => { play(kind, id, true); $("#modal").classList.add("hidden"); };
   if ($("#m-dl")) $("#m-dl").onclick = () => download(kind, id);
+}
+
+/* IMDb panel: shared by movies and series. Cached data shows straight away;
+   otherwise a button fetches it on demand. */
+function imdbHTML(d) {
+  if (!d) {
+    return `<div class="imdb" id="imdb">
+      <button class="ghost" id="imdb-fetch">🎬 Fetch from IMDb</button></div>`;
+  }
+  const votes = d.votes >= 1e6 ? (d.votes / 1e6).toFixed(1) + "M"
+    : d.votes >= 1e3 ? Math.round(d.votes / 1e3) + "K" : d.votes;
+  const years = d.end_year && d.end_year !== d.year ? `${d.year}–${d.end_year}` : d.year;
+  const facts = [
+    years, d.certificate, d.runtime_sec ? fmtTime(d.runtime_sec) : "",
+    (d.genres || []).join(", "),
+  ].filter(Boolean).map(esc).join(" · ");
+  const credits = Object.entries(d.credits || {}).map(([role, names]) =>
+    `<div><span class="muted">${esc(role)}:</span> ${esc(names.join(", "))}</div>`).join("");
+  const more = [
+    d.countries?.length ? `<div><span class="muted">Country:</span> ${esc(d.countries.join(", "))}</div>` : "",
+    d.languages?.length ? `<div><span class="muted">Language:</span> ${esc(d.languages.join(", "))}</div>` : "",
+  ].join("");
+  return `
+    <div class="imdb" id="imdb">
+      <div class="imdb-head">
+        <span class="imdb-logo">IMDb</span>
+        ${d.rating ? `<span class="imdb-score">★ ${d.rating}<small>/10</small></span>` : `<span class="muted">No rating yet</span>`}
+        ${d.votes ? `<span class="muted">${votes} votes</span>` : ""}
+        ${d.metascore ? `<span class="imdb-meta" title="Metascore">${d.metascore}</span>` : ""}
+      </div>
+      <div class="imdb-title"><b dir="auto">${esc(d.title)}</b>${facts ? ` · ${facts}` : ""}</div>
+      ${d.plot ? `<div class="plot" dir="auto">${esc(d.plot)}</div>` : ""}
+      <div class="imdb-credits">${credits}${more}</div>
+      <div class="imdb-actions">
+        <a href="${esc(d.url)}" target="_blank" rel="noopener">Open on IMDb ↗</a>
+        <button class="small ghost" id="imdb-fetch" title="Fetch again">↻ Refresh</button>
+        <button class="small ghost" id="imdb-fix">Wrong title?</button>
+      </div>
+    </div>`;
+}
+
+function bindImdb(kind, id) {
+  const run = async (imdb_id = "") => {
+    const box = $("#imdb");
+    box.innerHTML = `<span class="muted">Looking up on IMDb…</span>`;
+    try {
+      const d = await api("/api/imdb", { method: "POST", body: { kind, item_id: id, imdb_id } });
+      box.outerHTML = imdbHTML(d);
+    } catch (e) {
+      box.outerHTML = imdbHTML(null);
+      toast("IMDb: " + e.message, true);
+    }
+    bindImdb(kind, id);
+  };
+  const fetchBtn = $("#imdb-fetch"), fixBtn = $("#imdb-fix");
+  if (fetchBtn) fetchBtn.onclick = () => run();
+  if (fixBtn) fixBtn.onclick = () => {
+    const v = prompt("Paste the IMDb link or ID (tt…) for this title:");
+    if (v && /tt\d{5,}/.test(v)) run(v);
+    else if (v) toast("That doesn't look like an IMDb link", true);
+  };
+}
+
+async function openMovie(id) {
+  showModal(`<div class="empty">Loading…</div>`);
+  let m;
+  try {
+    m = await api(`/api/vod/${id}`);
+  } catch (e) {
+    return showModal(`<div class="empty">Could not load: ${esc(e.message)}</div>`);
+  }
+  const h = m.history;
+  const resumeAt = h && !h.completed && h.position_sec > 15 ? h.position_sec : 0;
+  const pct = resumeAt && h.duration_sec ? Math.min(100, (resumeAt / h.duration_sec) * 100) : 0;
+  const facts = [
+    m.genre, m.year || "", m.duration_secs ? fmtTime(m.duration_secs) : "",
+    m.rating > 0 ? `★ ${(+m.rating).toFixed(1)}` : "",
+  ].filter(Boolean).map(esc).join(" · ");
+
+  showModal(`
+    <div class="hero">
+      <img src="${img(m.icon)}" alt="" onerror="this.style.visibility='hidden'">
+      <div style="flex:1;min-width:0">
+        <h2 dir="auto">${esc(m.name)}</h2>
+        ${facts ? `<div class="muted" style="margin-bottom:6px">${facts}</div>` : ""}
+        <div class="plot" dir="auto">${esc(m.plot) || '<span class="muted">No description from the provider.</span>'}</div>
+        ${m.director ? `<div class="credit"><span class="muted">Director:</span> ${esc(m.director)}</div>` : ""}
+        ${m.cast ? `<div class="credit"><span class="muted">Cast:</span> ${esc(m.cast)}</div>` : ""}
+        ${resumeAt ? `<div class="muted" style="margin-top:8px">Watched to ${fmtTime(resumeAt)}</div>
+          ${pct > 1 ? `<div class="bar"><i style="width:${pct}%"></i></div>` : ""}` : ""}
+        <div class="btns" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="primary" id="m-play">▶ ${resumeAt ? "Resume" : "Play"}</button>
+          ${resumeAt || h?.completed ? `<button class="ghost" id="m-restart">↺ Start over</button>` : ""}
+          <button class="ghost" id="m-dl">${m.download === "done" ? "✓ Saved offline" : m.download ? "⬇ Queued" : "⬇ Save offline"}</button>
+          <button class="ghost" id="m-fav">${m.favorite ? "★ In favorites" : "☆ Add to favorites"}</button>
+        </div>
+      </div>
+    </div>
+    ${imdbHTML(m.imdb)}`);
+
+  const close = () => $("#modal").classList.add("hidden");
+  $("#m-play").onclick = () => { play("vod", id); close(); };
+  if ($("#m-restart")) $("#m-restart").onclick = () => { play("vod", id, true); close(); };
+  $("#m-dl").onclick = (e) => { if (!m.download) { download("vod", id); e.target.textContent = "⬇ Queued"; } };
+  $("#m-fav").onclick = async (e) => {
+    const r = await api("/api/favorite", { method: "POST", body: { kind: "vod", item_id: id } });
+    e.target.textContent = r.favorite ? "★ In favorites" : "☆ Add to favorites";
+  };
+  bindImdb("vod", id);
 }
 
 async function openSeries(id) {
@@ -217,12 +332,13 @@ async function openSeries(id) {
           ${esc(s.genre || "")}${s.release_date ? " · " + esc(s.release_date) : ""}
           ${s.rating ? " · ★ " + s.rating : ""}
         </div>
-        <div class="plot" dir="auto">${esc(s.plot || "")}</div>
+        <div class="plot" dir="auto">${esc(s.plot) || '<span class="muted">No description from the provider.</span>'}</div>
         <div style="margin-top:10px">
           <button class="ghost" id="s-fav">${s.favorite ? "★ In favorites" : "☆ Add to favorites"}</button>
         </div>
       </div>
     </div>
+    ${imdbHTML(data.imdb)}
     ${banner}
     ${body || '<div class="empty">No episodes listed.</div>'}
   `);
@@ -231,6 +347,7 @@ async function openSeries(id) {
     const r = await api("/api/favorite", { method: "POST", body: { kind: "series", item_id: id } });
     e.target.textContent = r.favorite ? "★ In favorites" : "☆ Add to favorites";
   };
+  bindImdb("series", id);
   $("#modal-body").querySelectorAll("[data-play-ep]").forEach((b) =>
     b.onclick = () => { play("episode", +b.dataset.playEp); $("#modal").classList.add("hidden"); });
   $("#modal-body").querySelectorAll("[data-dl-ep]").forEach((b) =>

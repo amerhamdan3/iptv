@@ -18,8 +18,10 @@ from pydantic import BaseModel
 import config
 import db
 import downloader
+import imdb
 import player
 import sync
+from xtream import Xtream
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -223,12 +225,95 @@ async def api_series(series_id: int, refresh: bool = False):
     info = db.one("SELECT * FROM series WHERE series_id=?", (series_id,))
     if not info:
         raise HTTPException(404, "unknown series")
-    eps = await sync.sync_episodes(series_id, force=refresh)
+    try:
+        eps = await sync.sync_episodes(series_id, force=refresh)
+    except httpx.HTTPError:
+        # Provider down or rate-limiting us: the cached list beats an error.
+        eps = sync.episodes(series_id)
     fav = db.one("SELECT 1 FROM favorites WHERE kind='series' AND item_id=?",
                  (series_id,))
     info["favorite"] = bool(fav)
     return {"series": info, "episodes": eps,
-            "progress": _series_progress(series_id)}
+            "progress": _series_progress(series_id),
+            "imdb": imdb.cached("series", series_id)}
+
+
+@app.get("/api/vod/{stream_id}")
+async def api_vod(stream_id: int):
+    """One movie's info panel: catalog row, provider details, watch state."""
+    info = db.one("SELECT * FROM vod WHERE stream_id=?", (stream_id,))
+    if not info:
+        raise HTTPException(404, "unknown movie")
+
+    # The provider has cast, director and runtime that the catalog doesn't
+    # keep. Best effort: if it is slow or refusing, show what we have.
+    extra = {}
+    api = Xtream()
+    try:
+        data = await asyncio.wait_for(
+            api._call("get_vod_info", vod_id=stream_id), timeout=8)
+        extra = data.get("info") if isinstance(data, dict) else {}
+        extra = extra if isinstance(extra, dict) else {}
+    except Exception:
+        pass
+    finally:
+        await api.close()
+
+    plot = extra.get("plot") or extra.get("description") or ""
+    genre = sync.norm_genre(extra.get("genre"))
+    if (plot and not info["plot"]) or (genre and not info["genre"]):
+        db.execute("UPDATE vod SET plot=?, genre=? WHERE stream_id=?",
+                   (info["plot"] or plot, info["genre"] or genre, stream_id))
+
+    hist = db.one("SELECT position_sec, duration_sec, completed FROM history "
+                  "WHERE kind='vod' AND item_id=?", (stream_id,))
+    dl = db.one("SELECT status FROM downloads WHERE kind='vod' AND item_id=?",
+                (stream_id,))
+    fav = db.one("SELECT 1 FROM favorites WHERE kind='vod' AND item_id=?",
+                 (stream_id,))
+    return {
+        "id": stream_id,
+        "name": info["name"],
+        "icon": info["icon"],
+        "plot": info["plot"] or plot,
+        "genre": info["genre"] or genre,
+        "year": info["year"],
+        "rating": info["rating"],
+        "duration_secs": int(extra.get("duration_secs") or 0),
+        "director": extra.get("director") or "",
+        "cast": extra.get("cast") or extra.get("actors") or "",
+        "favorite": bool(fav),
+        "history": hist,
+        "download": dl["status"] if dl else None,
+        "imdb": imdb.cached("vod", stream_id),
+    }
+
+
+class ImdbIn(BaseModel):
+    kind: str          # vod | series
+    item_id: int
+    imdb_id: str = ""  # optional tt id / IMDb URL to override the match
+
+
+@app.post("/api/imdb")
+async def api_imdb(body: ImdbIn):
+    if body.kind == "vod":
+        row = db.one("SELECT name, year FROM vod WHERE stream_id=?",
+                     (body.item_id,))
+    elif body.kind == "series":
+        row = db.one("SELECT name, year FROM series WHERE series_id=?",
+                     (body.item_id,))
+    else:
+        raise HTTPException(400, "bad kind")
+    if not row:
+        raise HTTPException(404, "unknown item")
+    try:
+        return await imdb.lookup(body.kind, body.item_id, row["name"],
+                                 row["year"] or 0, body.imdb_id)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"IMDb request failed: {e}")
 
 
 # ------------------------------------------------- continue watching

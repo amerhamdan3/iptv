@@ -81,6 +81,12 @@ CREATE TABLE IF NOT EXISTS downloads (
 );
 CREATE INDEX IF NOT EXISTS dl_status ON downloads(status);
 
+-- IMDb details fetched on demand from the item's info panel, as JSON.
+CREATE TABLE IF NOT EXISTS imdb (
+    kind TEXT, item_id INTEGER, imdb_id TEXT, data TEXT, fetched_at INTEGER,
+    PRIMARY KEY (kind, item_id)
+);
+
 -- unicode61 with diacritic folding so Arabic and Latin titles both search
 -- sensibly regardless of how they were typed.
 CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(

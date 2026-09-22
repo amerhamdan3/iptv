@@ -45,6 +45,11 @@ category is two dropdowns away: filter movies and shows by genre, release
 year or decade, and minimum rating, sorted by rating, release or date added.
 Movie genres come from a one-time background lookup after the first sync.
 
+**Shows what it is before you play it.** Clicking a movie or show opens its
+description, genre, cast and your progress. One click on **Fetch from IMDb**
+adds the IMDb rating, vote count, Metascore, runtime, certificate and full
+credits, cached so it's there next time. Wrong match? Paste the IMDb link.
+
 **Works offline.** Download any movie or episode. Interrupted downloads resume
 at the exact byte they stopped at. Once downloaded, playback never touches the
 network.
@@ -242,6 +247,7 @@ your place survives closing the player, closing the app, or a crash.
 app.py           API routes
 config.py        .env loading, stream URL builders
 xtream.py        Xtream player_api client
+imdb.py          on-demand IMDb rating and details lookup
 db.py            SQLite schema — catalog, favorites, history, downloads, FTS5
 sync.py          catalog sync + per-series episode caching
 player.py        mpv launching and position tracking over JSON IPC
@@ -262,6 +268,8 @@ The UI is a thin client over a plain JSON API, so it's easy to script:
 | `GET /api/search?q=` | full-text search across everything |
 | `GET /api/browse?kind=&category=` | paged listings |
 | `GET /api/series/{id}` | show details + episodes |
+| `GET /api/vod/{id}` | movie details + watch state |
+| `POST /api/imdb` | fetch and cache IMDb data for a movie or show |
 | `GET /api/continue` | continue-watching with next-episode resolution |
 | `POST /api/play` | launch playback |
 | `POST /api/download` | queue an offline download |
