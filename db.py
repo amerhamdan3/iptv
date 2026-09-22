@@ -92,12 +92,45 @@ CREATE VIRTUAL TABLE IF NOT EXISTS search USING fts5(
 """
 
 
+# Columns added after the first release. CREATE TABLE IF NOT EXISTS won't
+# touch an existing table, so older databases get them via ALTER TABLE.
+MIGRATIONS = {
+    "vod": {
+        "genre": "TEXT DEFAULT ''",
+        "year": "INTEGER DEFAULT 0",
+        "plot": "TEXT DEFAULT ''",
+        # When get_vod_info last filled genre/year/plot for this movie.
+        "details_synced_at": "INTEGER DEFAULT 0",
+    },
+    "series": {
+        "year": "INTEGER DEFAULT 0",
+    },
+}
+
+INDEXES = """
+CREATE INDEX IF NOT EXISTS vod_year ON vod(year);
+CREATE INDEX IF NOT EXISTS vod_rating ON vod(rating);
+CREATE INDEX IF NOT EXISTS series_year ON series(year);
+CREATE INDEX IF NOT EXISTS series_rating ON series(rating);
+"""
+
+
+def _migrate(c: sqlite3.Connection) -> None:
+    for table, cols in MIGRATIONS.items():
+        have = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+        for col, decl in cols.items():
+            if col not in have:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
+    c.executescript(INDEXES)
+
+
 def connect() -> sqlite3.Connection:
     global _conn
     if _conn is None:
         _conn = sqlite3.connect(config.DB_PATH, check_same_thread=False)
         _conn.row_factory = sqlite3.Row
         _conn.executescript(SCHEMA)
+        _migrate(_conn)
         _conn.commit()
     return _conn
 

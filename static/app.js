@@ -4,7 +4,18 @@ const $ = (s) => document.querySelector(s);
 const content = $("#content");
 const sidebar = $("#sidebar");
 
-const state = { tab: "home", category: "", query: "", cats: {} };
+const state = {
+  tab: "home", category: "", query: "", cats: {},
+  // Per-kind so switching Movies <-> Series keeps each one's filters.
+  filters: {
+    vod: { genre: "", year: "", rating: "", sort: "rating" },
+    series: { genre: "", year: "", rating: "", sort: "rating" },
+  },
+  facets: {},
+  seq: 0, // bumps on every grid render so late responses can be dropped
+};
+
+const PAGE = 120;
 
 /* ------------------------------------------------------------ helpers */
 
@@ -86,10 +97,13 @@ async function markWatched(kind, id, completed) {
 
 function cardHTML(it) {
   const kind = it.kind;
+  const meta = [it.rating > 0 ? `★ ${(+it.rating).toFixed(1)}` : "", it.year || ""]
+    .filter(Boolean).join(" · ");
   return `
   <div class="card ${kind === "live" ? "live" : ""}" data-kind="${kind}" data-id="${it.id}">
     <img class="thumb" loading="lazy" src="${img(it.icon)}" alt=""
          onerror="this.style.visibility='hidden'">
+    ${meta ? `<span class="badge">${meta}</span>` : ""}
     <button class="star ${it.favorite ? "on" : ""}" data-fav="1">★</button>
     <div class="label" dir="auto">${esc(it.name)}</div>
   </div>`;
@@ -306,28 +320,137 @@ async function renderCategories(kind) {
   sidebar.classList.remove("hidden");
   if (!state.cats[kind]) state.cats[kind] = await api(`/api/categories?kind=${kind}`);
   const cats = state.cats[kind];
-  $("#cats").innerHTML =
-    `<div class="cat ${state.category === "" ? "active" : ""}" data-c="">All
-       <span class="n">${cats.reduce((a, c) => a + c.count, 0)}</span></div>` +
-    cats.map((c) => `<div class="cat ${state.category === c.id ? "active" : ""}"
+  // No "All" entry on purpose: thousands of posters at once is unusable.
+  // Clicking the active category again deselects it.
+  $("#cats").innerHTML = cats.map((c) => `<div class="cat ${state.category === c.id ? "active" : ""}"
         data-c="${esc(c.id)}"><span dir="auto">${esc(c.name)}</span>
         <span class="n">${c.count}</span></div>`).join("");
   $("#cats").querySelectorAll(".cat").forEach((el) =>
-    el.onclick = () => { state.category = el.dataset.c; render(); });
+    el.onclick = () => {
+      state.category = state.category === el.dataset.c ? "" : el.dataset.c;
+      render();
+    });
+}
+
+const hasFilter = (f) => !!(f && (f.genre || f.year || f.rating));
+
+/* "2012" -> 2012..2012, "2010s" -> 2010..2019 */
+function yearRange(v) {
+  if (!v) return [0, 0];
+  if (v.endsWith("s")) return [+v.slice(0, -1), +v.slice(0, -1) + 9];
+  return [+v, +v];
+}
+
+function browseURL(kind, offset) {
+  const p = new URLSearchParams({ kind, category: state.category, offset, limit: PAGE });
+  const f = state.filters[kind];
+  if (f) {
+    const [yf, yt] = yearRange(f.year);
+    if (f.genre) p.set("genre", f.genre);
+    if (yf) { p.set("year_from", yf); p.set("year_to", yt); }
+    if (f.rating) p.set("min_rating", f.rating);
+    p.set("sort", f.sort);
+  }
+  return `/api/browse?${p}`;
+}
+
+async function filterBarHTML(kind) {
+  // Movie genres trickle in while the details backfill runs; don't cache yet.
+  if (!state.facets[kind] || (kind === "vod" && state.detailsRunning))
+    state.facets[kind] = await api(`/api/facets?kind=${kind}`);
+  const { genres, years } = state.facets[kind];
+  const f = state.filters[kind];
+  const opt = (v, label, cur) =>
+    `<option value="${esc(v)}" ${String(cur) === String(v) ? "selected" : ""}>${esc(label)}</option>`;
+
+  const decades = [...new Set(years.map((y) => Math.floor(y.year / 10) * 10))];
+  return `
+    <div class="filters">
+      <select data-f="genre">
+        ${opt("", "All genres", f.genre)}
+        ${genres.map((g) => opt(g.name, `${g.name} (${g.count})`, f.genre)).join("")}
+      </select>
+      <select data-f="year">
+        ${opt("", "Any year", f.year)}
+        <optgroup label="Decade">${decades.map((d) => opt(`${d}s`, `${d}s`, f.year)).join("")}</optgroup>
+        <optgroup label="Year">${years.map((y) => opt(y.year, `${y.year} (${y.count})`, f.year)).join("")}</optgroup>
+      </select>
+      <select data-f="rating">
+        ${opt("", "Any rating", f.rating)}
+        ${[9, 8, 7, 6, 5].map((r) => opt(r, `★ ${r}+`, f.rating)).join("")}
+      </select>
+      <select data-f="sort">
+        ${opt("rating", "Top rated", f.sort)}
+        ${opt("year", "Newest release", f.sort)}
+        ${opt("added", "Recently added", f.sort)}
+        ${opt("name", "A–Z", f.sort)}
+      </select>
+      ${hasFilter(f) || state.category ? `<button class="ghost" id="f-clear">Clear</button>` : ""}
+    </div>`;
+}
+
+function bindFilterBar(kind) {
+  content.querySelectorAll(".filters select").forEach((s) =>
+    s.onchange = () => { state.filters[kind][s.dataset.f] = s.value; render(); });
+  const clear = $("#f-clear");
+  if (clear) clear.onclick = () => {
+    Object.assign(state.filters[kind], { genre: "", year: "", rating: "" });
+    state.category = "";
+    render();
+  };
 }
 
 async function renderGrid(kind) {
+  const seq = ++state.seq;
   await renderCategories(kind);
-  content.innerHTML = `<div class="empty">Loading…</div>`;
-  const items = await api(
-    `/api/browse?kind=${kind}&category=${encodeURIComponent(state.category)}&limit=300`);
+  const filterable = kind !== "live";
+  const bar = filterable ? await filterBarHTML(kind) : "";
+  if (seq !== state.seq) return;
+
   const label = { live: "channels", vod: "movies", series: "shows" }[kind];
-  content.innerHTML = items.length
-    ? `<h2>${items.length >= 300 ? "First 300" : items.length} ${label}
-         <span class="muted">${state.category ? "" : "· pick a category on the left to narrow down"}</span></h2>
-       <div class="grid">${items.map(cardHTML).join("")}</div>`
-    : `<div class="empty">Nothing here.</div>`;
+  if (!state.category && !hasFilter(state.filters[kind])) {
+    content.innerHTML = bar + `<div class="empty">${filterable
+      ? `Pick a category on the left, or choose a genre, year or rating above
+         to search all ${label}.`
+      : "Pick a category on the left."}</div>`;
+    if (filterable) bindFilterBar(kind);
+    return;
+  }
+
+  content.innerHTML = bar + `<div class="empty">Loading…</div>`;
+  if (filterable) bindFilterBar(kind);
+  const items = await api(browseURL(kind, 0));
+  if (seq !== state.seq) return;
+
+  const scope = state.category
+    ? (state.cats[kind].find((c) => c.id === state.category)?.name || "")
+    : `all ${label}`;
+  content.innerHTML = bar + (items.length
+    ? `<h2><span id="g-count">${items.length}${items.length === PAGE ? "+" : ""}</span> ${label}
+         <span class="muted" dir="auto">· ${esc(scope)}</span></h2>
+       <div class="grid" id="g-grid">${items.map(cardHTML).join("")}</div>
+       ${items.length === PAGE
+         ? `<div style="text-align:center;margin:20px 0"><button class="small" id="g-more">Load more</button></div>` : ""}`
+    : `<div class="empty">Nothing matches these filters.</div>`);
+  if (filterable) bindFilterBar(kind);
   bindCards(content);
+
+  let offset = items.length;
+  const more = $("#g-more");
+  if (more) more.onclick = async () => {
+    more.disabled = true;
+    const next = await api(browseURL(kind, offset));
+    if (seq !== state.seq) return;
+    offset += next.length;
+    // Bind in a scratch node so existing cards don't get a second listener.
+    const tmp = document.createElement("div");
+    tmp.innerHTML = next.map(cardHTML).join("");
+    bindCards(tmp);
+    $("#g-grid").append(...tmp.children);
+    $("#g-count").textContent = offset + (next.length === PAGE ? "+" : "");
+    if (next.length < PAGE) more.remove();
+    else more.disabled = false;
+  };
 }
 
 async function renderFavorites() {
@@ -445,12 +568,16 @@ async function poll() {
     }
 
     const sy = s.sync;
+    if (state.detailsRunning && !sy.details.running) delete state.facets.vod;
+    state.detailsRunning = sy.details.running;
     $("#sync-status").textContent = sy.running
       ? `Syncing: ${sy.stage} ${sy.progress}%`
       : sy.last_error
         ? `Sync failed: ${sy.last_error}`
         : `${sy.counts.live} channels · ${sy.counts.vod} movies · ${sy.counts.series} shows`
-          + (sy.last_sync ? ` · updated ${new Date(sy.last_sync * 1000).toLocaleString()}` : "");
+          + (sy.last_sync ? ` · updated ${new Date(sy.last_sync * 1000).toLocaleString()}` : "")
+          + (sy.details.running
+            ? ` · fetching movie genres ${sy.details.done}/${sy.details.total}` : "");
     $("#disk").textContent = s.downloads.disk_bytes
       ? `${fmtBytes(s.downloads.disk_bytes)} offline` : "";
 

@@ -40,6 +40,11 @@ keeps working when the provider is down.
 diacritic folding so Arabic and Latin titles both match however you type them.
 Tested against a ~24,000-item library: **sub-200ms**.
 
+**Filters the whole library.** Top-rated 2012 comedies across every series
+category is two dropdowns away: filter movies and shows by genre, release
+year or decade, and minimum rating, sorted by rating, release or date added.
+Movie genres come from a one-time background lookup after the first sync.
+
 **Works offline.** Download any movie or episode. Interrupted downloads resume
 at the exact byte they stopped at. Once downloaded, playback never touches the
 network.

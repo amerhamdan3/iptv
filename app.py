@@ -28,6 +28,7 @@ if sys.platform == "win32":
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     db.connect()
+    sync.backfill_years()
     downloader.start_supervisor()
     # Refresh in the background; the UI is already usable from cache.
     asyncio.create_task(sync.background_refresh())
@@ -80,38 +81,91 @@ def api_categories(kind: str):
         f"ORDER BY c.name", (kind,))
 
 
+BROWSE_SORTS = {
+    "rating": "t.rating DESC, t.year DESC, t.name",
+    "year": "t.year DESC, t.rating DESC, t.name",
+    "added": "t.added DESC",
+    "name": "t.name",
+}
+
+
 @app.get("/api/browse")
 def api_browse(kind: str, category: str = "", offset: int = 0,
-               limit: int = 120, favorites: bool = False):
+               limit: int = 120, favorites: bool = False, genre: str = "",
+               year_from: int = 0, year_to: int = 0, min_rating: float = 0,
+               sort: str = ""):
     if kind == "series":
-        base = ("SELECT s.series_id AS id, s.name, s.cover AS icon, s.rating, "
-                "s.genre, 'series' AS kind, "
+        base = ("SELECT t.series_id AS id, t.name, t.cover AS icon, t.rating, "
+                "t.genre, t.year, 'series' AS kind, "
                 "(f.item_id IS NOT NULL) AS favorite "
-                "FROM series s LEFT JOIN favorites f "
-                "  ON f.kind='series' AND f.item_id=s.series_id")
-        where, params = [], []
-    elif kind in ("live", "vod"):
-        base = (f"SELECT t.stream_id AS id, t.name, t.icon, "
-                f"{'t.rating' if kind == 'vod' else '0'} AS rating, "
-                f"'' AS genre, '{kind}' AS kind, "
-                f"(f.item_id IS NOT NULL) AS favorite "
-                f"FROM {kind} t LEFT JOIN favorites f "
-                f"  ON f.kind='{kind}' AND f.item_id=t.stream_id")
-        where, params = [], []
+                "FROM series t LEFT JOIN favorites f "
+                "  ON f.kind='series' AND f.item_id=t.series_id")
+    elif kind == "vod":
+        base = ("SELECT t.stream_id AS id, t.name, t.icon, t.rating, "
+                "t.genre, t.year, 'vod' AS kind, "
+                "(f.item_id IS NOT NULL) AS favorite "
+                "FROM vod t LEFT JOIN favorites f "
+                "  ON f.kind='vod' AND f.item_id=t.stream_id")
+    elif kind == "live":
+        base = ("SELECT t.stream_id AS id, t.name, t.icon, 0 AS rating, "
+                "'' AS genre, 0 AS year, 'live' AS kind, "
+                "(f.item_id IS NOT NULL) AS favorite "
+                "FROM live t LEFT JOIN favorites f "
+                "  ON f.kind='live' AND f.item_id=t.stream_id")
     else:
         raise HTTPException(400, "bad kind")
 
+    where, params = [], []
     if category:
-        where.append("t.category_id=?" if kind != "series"
-                     else "s.category_id=?")
+        where.append("t.category_id=?")
         params.append(category)
     if favorites:
         where.append("f.item_id IS NOT NULL")
+    if kind != "live":
+        if genre:
+            # Genres are stored as "A, B, C"; pad so "Drama" can't hit "Dramedy".
+            where.append("(', ' || t.genre || ',') LIKE ?")
+            params.append(f"%, {genre},%")
+        if year_from:
+            where.append("t.year >= ?")
+            params.append(year_from)
+        if year_to:
+            where.append("t.year <= ?")
+            params.append(year_to)
+        if min_rating:
+            where.append("t.rating >= ?")
+            params.append(min_rating)
 
-    sql = base + (" WHERE " + " AND ".join(where) if where else "")
-    sql += " ORDER BY favorite DESC, name LIMIT ? OFFSET ?"
+    # Dumping a whole catalog in one grid is useless; the UI must narrow first.
+    if not where:
+        return []
+
+    sql = base + " WHERE " + " AND ".join(where)
+    order = BROWSE_SORTS.get(sort) if kind != "live" else None
+    if kind == "series" and sort == "added":
+        order = "t.last_modified DESC"
+    sql += f" ORDER BY {order or 'favorite DESC, t.name'} LIMIT ? OFFSET ?"
     params += [limit, offset]
     return db.query(sql, params)
+
+
+@app.get("/api/facets")
+def api_facets(kind: str):
+    """Genres and release years present in a catalog, for the filter bar."""
+    if kind not in ("vod", "series"):
+        raise HTTPException(400, "bad kind")
+    genres: dict[str, int] = {}
+    for r in db.query(f"SELECT genre FROM {kind} WHERE genre <> ''"):
+        for g in r["genre"].split(", "):
+            genres[g] = genres.get(g, 0) + 1
+    years = db.query(f"SELECT year, COUNT(*) AS count FROM {kind} "
+                     f"WHERE year > 0 GROUP BY year ORDER BY year DESC")
+    return {
+        # Drop one-off junk genres a single provider entry made up.
+        "genres": sorted(({"name": g, "count": n} for g, n in genres.items()
+                          if n >= 3), key=lambda x: x["name"].lower()),
+        "years": years,
+    }
 
 
 @app.get("/api/search")
