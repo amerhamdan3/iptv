@@ -421,6 +421,17 @@ def api_mine(body: MineIn):
         raise HTTPException(502, f"Watchlog refused it: {e.response.text[:200]}")
 
 
+@app.delete("/api/mine/{kind}/{item_id}")
+def api_mine_delete(kind: str, item_id: int):
+    """Take a title off the shared list (e.g. un-pinning a watchlist item)."""
+    if not watchlog.enabled():
+        raise HTTPException(400, "Watchlog isn't set up")
+    try:
+        return {"removed": watchlog.remove(kind, item_id)}
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Watchlog unreachable: {e}")
+
+
 @app.get("/api/mylist")
 def api_mylist():
     return watchlog.my_list()

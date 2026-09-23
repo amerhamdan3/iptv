@@ -178,12 +178,13 @@ function mineHTML(m) {
           : m.status === "watchlist" ? "📌 On your watchlist" : "Not on your list yet"}</span>
       </div>
       ${m.status === "suggested" && m.reason ? `<div class="muted mine-reason" dir="auto">${esc(m.reason)}</div>` : ""}
-      <div class="mine-row">
-        <button class="small ghost ${on(m.status === "watched")}" data-mine-status="watched">✓ Watched</button>
-        <button class="small ghost ${on(m.status === "watchlist")}" data-mine-status="watchlist">📌 Watchlist</button>
-      </div>
       <div class="mine-stars">${[1,2,3,4,5,6,7,8,9,10].map((n) =>
         `<button class="${m.rating && n <= m.rating ? "on" : ""}" data-mine-rate="${n}">${n}</button>`).join("")}</div>
+      ${m.status === "watched" ? "" : `
+      <div class="mine-row">
+        <button class="small ghost ${on(m.status === "watchlist")}" data-mine-want>📌 ${m.status === "watchlist" ? "On your watchlist" : "Want to watch"}</button>
+        <span class="muted">Rate it once you've seen it</span>
+      </div>`}
     </div>`;
 }
 
@@ -204,10 +205,21 @@ function bindMine(kind, id, m) {
       toast("My list: " + e.message, true);
     }
   };
-  box.querySelectorAll("[data-mine-status]").forEach((b) => b.onclick = () => {
-    const v = b.dataset.mineStatus;
-    if (cur.status !== v) send({ status: v });
-  });
+  const want = box.querySelector("[data-mine-want]");
+  if (want) want.onclick = async () => {
+    if (cur.status !== "watchlist") return send({ status: "watchlist" });
+    // Tapping 📌 again takes it off the list.
+    box.classList.add("busy");
+    try {
+      await api(`/api/mine/${kind}/${id}`, { method: "DELETE" });
+      cur = {};
+      box.outerHTML = mineHTML(cur);
+      bindMine(kind, id, cur);
+    } catch (e) {
+      box.classList.remove("busy");
+      toast("My list: " + e.message, true);
+    }
+  };
   box.querySelectorAll("[data-mine-rate]").forEach((b) => b.onclick = () => {
     const v = +b.dataset.mineRate;
     // Rating something means you've seen it; tap the same score to clear it.

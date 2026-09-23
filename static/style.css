@@ -192,9 +192,9 @@ h2 .muted { font-weight: 400; font-size: 13px; }
 .mine.busy { opacity: .6; pointer-events: none; }
 .mine-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .mine-reason { margin: -2px 0 8px; }
-.mine-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.mine-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .mine-row .on { color: var(--text); border-color: var(--accent); background: rgba(63,185,80,.15); }
-.mine-stars { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-top: 10px; }
+.mine-stars { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; }
 .mine-stars button {
   background: var(--panel); border: 1px solid var(--line); color: var(--muted);
   border-radius: 6px; padding: 6px 0; font-weight: 600; cursor: pointer;

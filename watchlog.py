@@ -265,6 +265,22 @@ def update(kind: str, item_id: int, fields: dict) -> dict:
         return {**fields, "pending": True}
 
 
+def remove(kind: str, item_id: int) -> bool:
+    """Take a title off the list entirely. False if it wasn't on it."""
+    entry = entry_for(kind, item_id)
+    if not entry:
+        return False
+    with _client() as c:
+        r = c.delete(f"/api/items/{entry['id']}")
+        if r.status_code != 404:
+            r.raise_for_status()
+    with _lock:
+        _items.pop(entry["id"], None)
+        key = (entry["type"], norm(entry["title"]))
+        _by_title[key] = [i for i in _by_title.get(key, []) if i["id"] != entry["id"]]
+    return True
+
+
 def _flush_outbox() -> None:
     for row in db.query("SELECT * FROM watchlog_outbox ORDER BY id"):
         try:
