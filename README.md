@@ -53,7 +53,7 @@ description, genre, cast and your progress. One click on **Fetch from IMDb**
 adds the IMDb rating, vote count, Metascore, runtime, certificate and full
 credits, cached so it's there next time. Wrong match? Paste the IMDb link.
 
-**One list, everywhere.** Rate anything 1–10, give it 👍 or 👎, mark it
+**One list, everywhere.** Rate anything 1–10, mark it
 watched or save it to a watchlist, right from its info panel. Finishing a
 movie or episode logs it as watched automatically. It all goes to your
 [watchlog](https://github.com/amerhamdan3/watchlog), a small free service on

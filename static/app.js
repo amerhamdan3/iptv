@@ -151,13 +151,13 @@ function openItem(kind, id, name) {
   if ($("#m-dl")) $("#m-dl").onclick = () => download(kind, id);
 }
 
-/* My list: the shared watchlog entry for a title (watched, rating, verdict).
+/* My list: the shared watchlog entry for a title (watched, rating).
    `mine` is null when the watchlog isn't set up, {} when the title isn't on
    the list yet. */
 function mineBadge(m) {
   if (!m || !m.status) return "";
   const txt = m.status === "watched"
-    ? `✓${m.rating ? " " + m.rating : ""}${m.liked === -1 ? " 👎" : ""}`
+    ? `✓${m.rating ? " " + m.rating : ""}`
     : m.status === "suggested" ? "💡" : "📌";
   const tip = m.status === "watched"
     ? `Watched${m.watched_at ? " " + m.watched_at : ""}${m.rating ? " · rated " + m.rating + "/10" : ""}`
@@ -181,9 +181,6 @@ function mineHTML(m) {
       <div class="mine-row">
         <button class="small ghost ${on(m.status === "watched")}" data-mine-status="watched">✓ Watched</button>
         <button class="small ghost ${on(m.status === "watchlist")}" data-mine-status="watchlist">📌 Watchlist</button>
-        <span class="mine-sep"></span>
-        <button class="small ghost up ${on(m.liked === 1)}" data-mine-liked="1" title="Liked it">👍</button>
-        <button class="small ghost down ${on(m.liked === -1)}" data-mine-liked="-1" title="Didn't like it">👎</button>
       </div>
       <div class="mine-stars">${[1,2,3,4,5,6,7,8,9,10].map((n) =>
         `<button class="${m.rating && n <= m.rating ? "on" : ""}" data-mine-rate="${n}">${n}</button>`).join("")}</div>
@@ -210,10 +207,6 @@ function bindMine(kind, id, m) {
   box.querySelectorAll("[data-mine-status]").forEach((b) => b.onclick = () => {
     const v = b.dataset.mineStatus;
     if (cur.status !== v) send({ status: v });
-  });
-  box.querySelectorAll("[data-mine-liked]").forEach((b) => b.onclick = () => {
-    const v = +b.dataset.mineLiked;
-    send({ liked: cur.liked === v ? null : v });
   });
   box.querySelectorAll("[data-mine-rate]").forEach((b) => b.onclick = () => {
     const v = +b.dataset.mineRate;
@@ -691,7 +684,7 @@ async function renderMyList() {
           ${it.reason && it.status !== "watched" ? `<div class="muted sub reason" dir="auto">${esc(it.reason)}</div>` : ""}
           ${it.note ? `<div class="muted sub" dir="auto">“${esc(it.note)}”</div>` : ""}
         </div>
-        <div class="score">${it.rating ? it.rating : ""}${it.liked === 1 ? " 👍" : it.liked === -1 ? " 👎" : ""}</div>
+        <div class="score">${it.rating || ""}</div>
       </div>`;
   };
   const section = (title, list, empty) => `

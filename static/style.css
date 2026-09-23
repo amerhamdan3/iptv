@@ -194,8 +194,6 @@ h2 .muted { font-weight: 400; font-size: 13px; }
 .mine-reason { margin: -2px 0 8px; }
 .mine-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .mine-row .on { color: var(--text); border-color: var(--accent); background: rgba(63,185,80,.15); }
-.mine-row .down.on { border-color: #f85149; background: rgba(248,81,73,.15); }
-.mine-sep { width: 8px; }
 .mine-stars { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-top: 10px; }
 .mine-stars button {
   background: var(--panel); border: 1px solid var(--line); color: var(--muted);

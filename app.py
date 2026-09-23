@@ -400,12 +400,12 @@ def _mine(kind: str, item_id: int) -> dict | None:
 class MineIn(BaseModel):
     kind: str                  # vod | series
     item_id: int
-    changes: dict              # rating, liked, status, watched_at, note
+    changes: dict              # rating, status, watched_at, note
 
 
 @app.post("/api/mine")
 def api_mine(body: MineIn):
-    """Rate / like / mark a title in the shared watchlog."""
+    """Rate or mark a title in the shared watchlog."""
     if not watchlog.enabled():
         raise HTTPException(400, "Watchlog isn't set up (WATCHLOG_URL and WATCHLOG_KEY in .env)")
     if body.kind not in ("vod", "series"):

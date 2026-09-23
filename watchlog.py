@@ -26,7 +26,7 @@ from sync import year_from
 TIMEOUT = httpx.Timeout(10.0)
 REFRESH_SECONDS = 60
 MATCH_TTL = 3600            # how long a list item -> catalog match is trusted
-FIELDS = {"rating", "liked", "status", "watched_at", "note"}
+FIELDS = {"rating", "status", "watched_at", "note"}
 
 _lock = threading.Lock()
 _items: dict[str, dict] = {}                 # watchlog id -> item
@@ -173,11 +173,11 @@ def entry_for(kind: str, item_id: int, name: str | None = None,
 
 
 def summary(item: dict | None) -> dict | None:
-    """What the UI needs about an entry: status, score, verdict."""
+    """What the UI needs about an entry: status and score."""
     if not item:
         return None
     return {k: item.get(k) for k in
-            ("id", "status", "rating", "liked", "watched_at", "reason", "pending")}
+            ("id", "status", "rating", "watched_at", "reason", "pending")}
 
 
 def annotate(rows: list[dict]) -> list[dict]:
@@ -247,9 +247,9 @@ def _send(kind: str, item_id: int, fields: dict) -> dict:
 def update(kind: str, item_id: int, fields: dict) -> dict:
     """Change my entry for a catalog item. Queues it if the service is down."""
     fields = {k: v for k, v in fields.items() if k in FIELDS}
-    # A score or verdict means you've seen it, unless it's already marked
-    # watched, in which case the original watch date stays.
-    if "status" not in fields and (fields.get("rating") or fields.get("liked")):
+    # A score means you've seen it, unless it's already marked watched, in
+    # which case the original watch date stays.
+    if "status" not in fields and fields.get("rating"):
         current = entry_for(kind, item_id)
         if not current or current["status"] != "watched":
             fields["status"] = "watched"
