@@ -1,19 +1,25 @@
 """Launch mpv and track exactly where you got to.
 
-mpv exposes a JSON IPC channel over a Windows named pipe. We poll it for
-time-pos every couple of seconds and persist that to SQLite, so resume
-survives closing the player, closing the app, or a hard crash.
+mpv exposes a JSON IPC channel: a named pipe on Windows, a Unix socket
+everywhere else. We poll it for time-pos every couple of seconds and persist
+that to SQLite, so resume survives closing the player, closing the app, or a
+hard crash.
 """
 import json
 import os
+import socket
 import subprocess
+import tempfile
 import threading
 import time
 
 import config
 import db
 
-PIPE = r"\\.\pipe\iptv-mpv"
+if os.name == "nt":
+    PIPE = r"\\.\pipe\iptv-mpv"
+else:
+    PIPE = os.path.join(tempfile.gettempdir(), f"iptv-mpv-{os.getuid()}.sock")
 POLL_SECONDS = 2.0
 # Below this, a stop is treated as "changed my mind" rather than progress.
 MIN_TRACK_SECONDS = 15
@@ -25,11 +31,12 @@ _lock = threading.Lock()
 
 
 class MpvIPC:
-    """Minimal JSON-IPC client over the named pipe."""
+    """Minimal JSON-IPC client over mpv's named pipe / Unix socket."""
 
     def __init__(self, path: str = PIPE):
         self.path = path
         self.f = None
+        self._sock = None
         self._rid = 0
         self._buf = b""
 
@@ -37,9 +44,18 @@ class MpvIPC:
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
-                self.f = open(self.path, "r+b", buffering=0)
+                if os.name == "nt":
+                    self.f = open(self.path, "r+b", buffering=0)
+                else:
+                    # A Unix socket can't be open()ed like a file.
+                    self._sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    self._sock.connect(self.path)
+                    self.f = self._sock.makefile("rwb", buffering=0)
                 return True
             except OSError:
+                if self._sock:
+                    self._sock.close()
+                    self._sock = None
                 time.sleep(0.2)
         return False
 
@@ -83,12 +99,13 @@ class MpvIPC:
         return line.decode("utf-8", "replace")
 
     def close(self):
-        if self.f:
-            try:
-                self.f.close()
-            except OSError:
-                pass
-            self.f = None
+        for h in (self.f, self._sock):
+            if h:
+                try:
+                    h.close()
+                except OSError:
+                    pass
+        self.f = self._sock = None
 
 
 def is_playing() -> bool:
