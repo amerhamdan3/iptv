@@ -204,7 +204,7 @@ def _monitor(session: dict) -> None:
         _finalize(session)
 
 
-def _persist(session: dict) -> None:
+def _persist(session: dict, final: bool = False) -> None:
     """Live TV has no meaningful position, so only record that it was watched."""
     if session["kind"] == "live":
         db.execute(
@@ -229,10 +229,13 @@ def _persist(session: dict) -> None:
         "watched_at=excluded.watched_at",
         (session["kind"], session["item_id"], session["series_id"],
          pos, dur, done, db.now()))
+    import progress_sync  # late: keeps player importable on its own
+    progress_sync.push(session["kind"], session["item_id"], session["series_id"],
+                       pos, dur, bool(done), final=final or bool(done))
 
 
 def _finalize(session: dict) -> None:
-    _persist(session)
+    _persist(session, final=True)
     # Log to the shared watchlog only when this playback reached the end.
     dur = session["duration"] or 0
     if (session["kind"] in ("vod", "episode") and dur > 0

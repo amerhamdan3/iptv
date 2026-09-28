@@ -20,6 +20,7 @@ import db
 import downloader
 import imdb
 import player
+import progress_sync
 import sync
 import watchlog
 from xtream import Xtream
@@ -36,6 +37,8 @@ async def lifespan(app: FastAPI):
     # Refresh in the background; the UI is already usable from cache.
     asyncio.create_task(sync.background_refresh())
     watchlog.ensure_fresh()
+    # Share playback positions with the TVs (via the watchlog).
+    progress_sync.start()
     yield
     player.stop()
 
@@ -521,6 +524,8 @@ def api_play(body: PlayIn):
         raise HTTPException(500, "mpv not found - expected bin/mpv.exe")
 
     meta = _resolve(body.kind, body.item_id)
+    # Another screen may have moved on since the last pull: resume from there.
+    progress_sync.pull_quietly()
 
     resume = 0.0
     h = db.one("SELECT position_sec, duration_sec, completed FROM history "
@@ -574,6 +579,10 @@ def api_mark(body: MarkIn):
         "position_sec=CASE WHEN excluded.completed=1 THEN 0 "
         "  ELSE history.position_sec END, watched_at=excluded.watched_at",
         (body.kind, body.item_id, series_id, int(body.completed), db.now()))
+    h = db.one("SELECT position_sec, duration_sec FROM history WHERE kind=? AND item_id=?",
+               (body.kind, body.item_id))
+    progress_sync.push(body.kind, body.item_id, series_id, h["position_sec"] if h else 0,
+                       h["duration_sec"] if h else 0, body.completed, final=True)
     if body.completed:
         watchlog.mark_watched_async(body.kind, body.item_id)
     return {"ok": True}
@@ -591,6 +600,8 @@ def api_download(body: DownloadIn):
     if body.kind not in ("vod", "episode"):
         raise HTTPException(400, "live streams cannot be downloaded")
     meta = _resolve(body.kind, body.item_id)
+    # Another screen may have moved on since the last pull: resume from there.
+    progress_sync.pull_quietly()
     return downloader.enqueue(body.kind, body.item_id, meta["url"],
                               meta["title"], meta["ext"], meta["series_id"])
 

@@ -87,6 +87,12 @@ CREATE TABLE IF NOT EXISTS imdb (
     PRIMARY KEY (kind, item_id)
 );
 
+-- Playback positions waiting to be shared through the watchlog
+-- (progress_sync.py); only the latest save per title is kept.
+CREATE TABLE IF NOT EXISTS progress_outbox (
+    id TEXT PRIMARY KEY, body TEXT, recorded_at REAL
+);
+
 -- Watchlog changes that couldn't be sent yet (service unreachable).
 CREATE TABLE IF NOT EXISTS watchlog_outbox (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
