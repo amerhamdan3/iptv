@@ -188,17 +188,21 @@ function mineHTML(m) {
     </div>`;
 }
 
-function bindMine(kind, id, m) {
+/* `wlId` instead of kind/id: a list title that isn't in the library, changed
+   by its watchlog id. */
+function bindMine(kind, id, m, wlId) {
   const box = $("#mine");
   if (!box) return;
   let cur = { ...(m || {}) };
   const send = async (changes) => {
     box.classList.add("busy");
     try {
-      const r = await api("/api/mine", { method: "POST", body: { kind, item_id: id, changes } });
+      const r = wlId
+        ? await api("/api/mine-id", { method: "POST", body: { id: wlId, changes } })
+        : await api("/api/mine", { method: "POST", body: { kind, item_id: id, changes } });
       cur = { ...cur, ...r };
       box.outerHTML = mineHTML(cur);
-      bindMine(kind, id, cur);
+      bindMine(kind, id, cur, wlId);
       if (r.pending) toast("Saved here; it will sync to your list when it's reachable");
     } catch (e) {
       box.classList.remove("busy");
@@ -211,10 +215,11 @@ function bindMine(kind, id, m) {
     // Tapping 📌 again takes it off the list.
     box.classList.add("busy");
     try {
-      await api(`/api/mine/${kind}/${id}`, { method: "DELETE" });
+      await api(wlId ? `/api/mine-id/${encodeURIComponent(wlId)}` : `/api/mine/${kind}/${id}`,
+        { method: "DELETE" });
       cur = {};
       box.outerHTML = mineHTML(cur);
-      bindMine(kind, id, cur);
+      bindMine(kind, id, cur, wlId);
     } catch (e) {
       box.classList.remove("busy");
       toast("My list: " + e.message, true);
@@ -681,13 +686,15 @@ async function renderMyList() {
       Add <code>WATCHLOG_URL</code> and <code>WATCHLOG_KEY</code> to <code>.env</code> and restart.</div>`;
     return;
   }
-  const row = (it) => {
+  // List rows pass extra classes (done, next) and attributes (position and,
+  // when not in the library, the watchlog id so they can still be rated).
+  const row = (it, cls = "", attrs = "") => {
     const m = it.match;
     const sub = [it.year, it.type === "show" ? "Series" : "Movie",
       it.status === "watched" && it.watched_at ? "watched " + it.watched_at : ""].filter(Boolean).join(" · ");
     const art = it.poster || (m && img(m.icon)) || "";
     return `
-      <div class="ml-item ${m ? "" : "missing"}" ${m ? `data-ml="${m.kind}:${m.id}"` : ""}
+      <div class="ml-item ${m ? "" : "missing"} ${cls}" ${attrs} ${m ? `data-ml="${m.kind}:${m.id}"` : ""}
            title="${m ? "Open in your library" : "Not in your IPTV library"}">
         ${art ? `<img src="${esc(art)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : `<div class="ph"></div>`}
         <div class="t">
@@ -699,6 +706,20 @@ async function renderMyList() {
         <div class="score">${it.rating || ""}</div>
       </div>`;
   };
+  // Lists ("Marvel"): titles in their own order, watched ones dimmed, and
+  // the first unwatched one marked as next up.
+  const listRow = (lst) => (it) => row({ ...it, status: it.watched ? "watched" : null },
+    `${it.watched ? "done" : ""} ${lst.next && it.id === lst.next.id ? "next" : ""}`,
+    `data-pos="${it.position}"${it.match ? "" : ` data-wl="${esc(it.id)}"`}`);
+  const listsHTML = (d.lists || []).map((lst) => `
+    <details class="ml-group" data-list="${esc(lst.id)}" ${openLists.has(lst.id) ? "open" : ""}>
+      <summary><b dir="auto">📚 ${esc(lst.name)}</b>
+        <span class="muted">${lst.watched} of ${lst.items.length} watched${lst.next ? " · next: " + esc(lst.next.title)
+          : lst.items.length ? " · all done ✓" : ""}</span>
+        <span class="bar"><i style="width:${lst.items.length ? (100 * lst.watched / lst.items.length) : 0}%"></i></span>
+        ${lst.description ? `<div class="muted sub" dir="auto">${esc(lst.description)}</div>` : ""}</summary>
+      <div class="ml-list">${lst.items.map(listRow(lst)).join("")}</div>
+    </details>`).join("");
   const section = (title, list, empty) => `
     <h2>${title} <span class="muted">${list.length || ""}</span></h2>
     ${list.length ? `<div class="ml-list">${list.map(row).join("")}</div>`
@@ -708,12 +729,33 @@ async function renderMyList() {
     ${d.pending ? `<div class="muted" style="margin-bottom:10px">⏳ ${d.pending} change(s) waiting to sync</div>` : ""}
     ${section("💡 Suggestions", d.suggested, "Nothing suggested yet — ask Claude for ideas and they land here.")}
     ${section("📌 Watchlist", d.watchlist, "Tap 📌 Watchlist on any movie or show to save it for later.")}
+    ${listsHTML ? `<h2>📚 Lists <span class="muted">${d.lists.length}</span></h2>${listsHTML}<div style="height:18px"></div>` : ""}
     ${section("✓ Watched", d.watched, "Finished titles show up here automatically, with your rating.")}`;
   content.querySelectorAll("[data-ml]").forEach((el) => el.onclick = () => {
     const [kind, id] = el.dataset.ml.split(":");
     kind === "series" ? openSeries(+id) : openMovie(+id);
   });
+  content.querySelectorAll("details[data-list]").forEach((el) => el.ontoggle = () => {
+    el.open ? openLists.add(el.dataset.list) : openLists.delete(el.dataset.list);
+  });
+  // Not in the library: no Play, but it can still be rated or pinned.
+  content.querySelectorAll("[data-wl]").forEach((el) => el.onclick = () => {
+    const wlId = el.dataset.wl;
+    const it = d.lists.flatMap((l) => l.items).find((i) => i.id === wlId);
+    showModal(`
+      <h2 dir="auto">${esc(it.title)}</h2>
+      <div class="muted">${esc([it.year, it.type === "show" ? "Series" : "Movie", "not in your IPTV library"].filter(Boolean).join(" · "))}
+        ${wlId.startsWith("tt") ? ` · <a href="https://www.imdb.com/title/${esc(wlId)}/" target="_blank" rel="noopener" style="color:#f5c518">IMDb ↗</a>` : ""}</div>
+      ${mineHTML({ status: it.status, rating: it.rating, watched_at: it.watched_at })}`);
+    bindMine(null, null, { status: it.status, rating: it.rating, watched_at: it.watched_at }, wlId);
+    // Show the change in the list once the dialog closes.
+    const closed = new MutationObserver(() => {
+      if ($("#modal").classList.contains("hidden")) { closed.disconnect(); renderMyList(); }
+    });
+    closed.observe($("#modal"), { attributes: true, attributeFilter: ["class"] });
+  });
 }
+const openLists = new Set();
 
 async function renderDownloads() {
   sidebar.classList.add("hidden");

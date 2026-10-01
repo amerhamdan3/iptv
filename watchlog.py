@@ -30,6 +30,7 @@ FIELDS = {"rating", "status", "watched_at", "note"}
 
 _lock = threading.Lock()
 _items: dict[str, dict] = {}                 # watchlog id -> item
+_lists: list[dict] = []                      # ordered lists ("Marvel"), with their titles
 _by_title: dict[tuple[str, str], list] = {}  # (type, normalised title) -> items
 _loaded_at = 0.0
 _refreshing = False
@@ -102,7 +103,15 @@ def refresh() -> None:
                 offset += len(page["items"])
                 if not page["items"] or offset >= page["total"]:
                     break
+            r = c.get("/api/lists", params={"items": 1})
+            if r.status_code == 404:
+                lists = []  # a watchlog from before lists
+            else:
+                r.raise_for_status()
+                lists = r.json()["lists"]
         _index(items)
+        global _lists
+        _lists = lists
         _last_error = None
         _flush_outbox()
     except Exception as e:
@@ -265,11 +274,36 @@ def update(kind: str, item_id: int, fields: dict) -> dict:
         return {**fields, "pending": True}
 
 
+def update_by_id(wl_id: str, fields: dict) -> dict:
+    """Change an entry by its watchlog id, for list titles not in the library.
+
+    A title that isn't in the watchlog yet gets its details from its list.
+    """
+    fields = {k: v for k, v in fields.items() if k in FIELDS}
+    cur = _items.get(wl_id)
+    if "status" not in fields and fields.get("rating") and (not cur or cur["status"] != "watched"):
+        fields["status"] = "watched"
+    if fields.get("status") == "watched" and "watched_at" not in fields \
+            and not (cur and cur.get("watched_at")):
+        fields["watched_at"] = _today()
+    with _client() as c:
+        r = c.put(f"/api/items/{wl_id}", json=fields)
+        r.raise_for_status()
+        item = r.json()
+    _remember(item)
+    return summary(item)
+
+
 def remove(kind: str, item_id: int) -> bool:
     """Take a title off the list entirely. False if it wasn't on it."""
     entry = entry_for(kind, item_id)
     if not entry:
         return False
+    return remove_by_id(entry["id"])
+
+
+def remove_by_id(wl_id: str) -> bool:
+    entry = _items.get(wl_id) or {"id": wl_id, "type": "", "title": ""}
     with _client() as c:
         r = c.delete(f"/api/items/{entry['id']}")
         if r.status_code != 404:
@@ -374,7 +408,24 @@ def my_list() -> dict:
     groups["watched"].sort(key=lambda i: (i.get("watched_at") or "", i["updated_at"]),
                            reverse=True)
     pending = db.one("SELECT COUNT(*) AS n FROM watchlog_outbox")["n"]
-    return {"enabled": True, "error": _last_error, "pending": pending, **groups}
+    return {"enabled": True, "error": _last_error, "pending": pending, **groups,
+            "lists": [_with_mine(lst) for lst in _lists]}
+
+
+def _with_mine(lst: dict) -> dict:
+    """A list with each title's watched/rating from the local copy, which
+    already has changes made here since the last refresh."""
+    items = []
+    for it in lst.get("items", []):
+        mine = _items.get(it["id"])
+        if mine:
+            it = {**it, "status": mine["status"], "rating": mine.get("rating"),
+                  "watched_at": mine.get("watched_at"),
+                  "watched": mine["status"] == "watched"}
+        items.append({**it, "match": _find_in_catalog(it)})
+    nxt = next((i for i in items if not i["watched"]), None)
+    return {**{k: v for k, v in lst.items() if k != "items"}, "items": items,
+            "watched": sum(1 for i in items if i["watched"]), "next": nxt}
 
 
 def status() -> dict:

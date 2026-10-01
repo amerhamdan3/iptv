@@ -210,6 +210,18 @@ h2 .muted { font-weight: 400; font-size: 13px; }
 }
 .ml-item:hover { border-color: var(--accent-2); }
 .ml-item.missing { cursor: default; opacity: .6; }
+.ml-item.missing[data-wl] { cursor: pointer; opacity: 1; }
+.ml-item.missing[data-wl]:hover { border-color: var(--accent-2); }
+.ml-item.done, .ml-item.missing.done { opacity: .5; }
+.ml-item.next { border-color: var(--accent); }
+.ml-item[data-pos]::before { content: attr(data-pos); color: var(--muted); font-size: 12px; min-width: 18px; text-align: right; }
+.ml-group { margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.ml-group summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.ml-group summary .bar { flex: 1 1 120px; max-width: 220px; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; align-self: center; }
+.ml-group summary .bar i { display: block; height: 100%; background: var(--accent); }
+.ml-group summary .sub { flex-basis: 100%; }
+.ml-group[open] summary { margin-bottom: 10px; }
+.ml-group .ml-list { margin-bottom: 0; }
 .ml-item.missing:hover { border-color: var(--line); }
 .ml-item img, .ml-item .ph {
   width: 48px; height: 72px; object-fit: cover; border-radius: 6px;

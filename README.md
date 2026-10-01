@@ -60,7 +60,10 @@ movie or episode logs it as watched automatically. It all goes to your
 Cloudflare, so every machine running this app, and the phone page, see the
 same list: posters show ✓ and your score wherever you open the app. The
 **📋 My List** tab has your suggestions (with why they were suggested), your
-watchlist and everything you've watched. Changes made while the list is
+watchlist and everything you've watched. **📚 Lists** there show ordered
+collections such as *Marvel* or *Harry Potter* (made through the watchlog
+API): watched titles stay in place with a ✓ and the next one to watch is
+highlighted. Titles you don't have can still be rated from a list. Changes made while the list is
 unreachable are queued and sent later. Set `WATCHLOG_URL` and `WATCHLOG_KEY`
 in `.env` to turn it on.
 

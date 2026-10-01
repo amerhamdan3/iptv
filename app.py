@@ -4,6 +4,7 @@ Run:  python app.py     then open http://127.0.0.1:8000
 """
 import asyncio
 import hashlib
+import re
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -422,6 +423,40 @@ def api_mine(body: MineIn):
         raise HTTPException(404, str(e))
     except httpx.HTTPStatusError as e:
         raise HTTPException(502, f"Watchlog refused it: {e.response.text[:200]}")
+
+
+class MineIdIn(BaseModel):
+    id: str                    # watchlog id: tt… or custom:slug
+    changes: dict
+
+
+@app.post("/api/mine-id")
+def api_mine_id(body: MineIdIn):
+    """Rate a list title by its watchlog id (for titles not in the library)."""
+    if not watchlog.enabled():
+        raise HTTPException(400, "Watchlog isn't set up")
+    if not re.fullmatch(r"tt\d{5,}|custom:[a-z0-9-]{1,80}", body.id):
+        raise HTTPException(400, "bad id")
+    bad = set(body.changes) - watchlog.FIELDS
+    if bad:
+        raise HTTPException(400, f"can't change: {', '.join(sorted(bad))}")
+    try:
+        return watchlog.update_by_id(body.id, body.changes)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(502, f"Watchlog refused it: {e.response.text[:200]}")
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Watchlog unreachable: {e}")
+
+
+@app.delete("/api/mine-id/{wl_id}")
+def api_mine_id_delete(wl_id: str):
+    """Un-pin a list title by its watchlog id. It stays in its lists."""
+    if not watchlog.enabled():
+        raise HTTPException(400, "Watchlog isn't set up")
+    try:
+        return {"removed": watchlog.remove_by_id(wl_id)}
+    except httpx.HTTPError as e:
+        raise HTTPException(502, f"Watchlog unreachable: {e}")
 
 
 @app.delete("/api/mine/{kind}/{item_id}")
